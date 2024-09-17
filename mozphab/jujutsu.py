@@ -13,15 +13,19 @@ from typing import (
 from mozphab import environment
 
 from .commits import Commit
+from .config import config
 from .diff import Diff
 from .exceptions import Error
 from .git import Git
 from .helpers import (
     is_valid_email,
+    short_node,
+    temporary_binary_file,
     temporary_file,
 )
 from .logger import logger
 from .repository import Repository
+from .spinner import wait_message
 from .subprocess_wrapper import check_call, check_output
 
 
@@ -326,6 +330,75 @@ class Jujutsu(Repository):
         return self.__git_repo._git_to_hg(node)
 
     # TODO: Functionality to make `local_uplift_if_possible` work?
+
+    def is_worktree_clean(self):
+        """Check if the working tree is clean."""
+        check_call(["jj", "git", "export"])
+        return True
+
+    def before_patch(self, node: str, name: str):
+        """Prepare repository to apply the patches.
+
+        Args:
+            node - SHA1 of the base commit
+            name - name of the bookmark to be created
+        """
+
+        if node:
+            with wait_message("Checking out %s.." % short_node(node)):
+                self.checkout(node)
+                check_call(["jj", "new", node])
+            logger.info("Checked out %s", short_node(node))
+
+        if name and not self.args.no_branch and config.create_branch:
+            branches = set(
+                check_output(
+                    ["jj", "bookmark", "list", "--template", 'name ++ "\n"'],
+                    strip=False,
+                )
+            )
+            branches = [re.sub("[ *]", "", b) for b in branches]
+            branch_name = name
+            i = 0
+            while branch_name in branches:
+                i += 1
+                branch_name = "%s_%s" % (name, i)
+
+            check_call(["jj", "bookmark", "create", branch_name])
+            logger.info("Created bookmark %s", branch_name)
+
+    def apply_patch(self, diff: str, body: str, author: str, author_date: str):
+        # apply the patch as a binary file to ensure the correct line endings
+        # is used.
+        # TODO: Use `jj`'s built-in patching facilities when it exists (see
+        # <https://github.com/martinvonz/jj/issues/2702>).
+        with temporary_binary_file(diff.encode("utf8")) as patch_file:
+            self.__git_repo.git_call(["apply", "--index", patch_file])
+
+        # TODO: author
+        # TODO: author date
+        # TODO: dedupe with other `describe` usage
+        with temporary_file(body) as message_path:
+            with open(message_path) as message_file:
+                check_call(["jj", "describe", "--stdin"], stdin=message_file)
+
+        check_call(["jj", "new"])
+
+        if not self.args.no_branch and config.create_branch:
+            # # TODO: Advance the bookmark. We don't have the name, because it's presumed that
+            # # working state in other repos will track it. So, where will it come from?
+
+            # # NOTE: Since we created and put a bookmark on this commit already, we can query `jj` for
+            # # a single bookmark's name, and be confident that it's the one we want.
+
+            # # TODO: use `--advance-branches` if/when implemented (see
+            # # <https://github.com/martinvonz/jj/issues/2338>).
+
+            # check_call(["jj", "bookmark", "move", …])
+            pass
+
+    def format_patch(self, diff: str, body: str, author: str, author_date: str) -> str:
+        return diff
 
     # ----
     # Methods private to this abstraction.
