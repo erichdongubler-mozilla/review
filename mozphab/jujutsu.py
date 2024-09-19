@@ -469,6 +469,36 @@ class Jujutsu(Repository):
     ) -> str:
         return diff
 
+    # TODO: add tests
+
+    def get_repo_head_branch(self) -> Optional[str]:
+        default_branch = self._phab_repo["fields"]["defaultBranch"]
+
+        remotes = self.__get_base_remotes()
+
+        for remote in remotes:
+            if self.__is_node(f"{default_branch}@{remote}"):
+                return unified_head
+
+    def uplift_commits(self, dest: str, commits: List[Commit]) -> List[Commit]:
+        # Branch name for the uplift.
+        mozphab_uplift_branch = f"{self.branch}_uplift"
+
+        # Create a new branch at the location of the tip of the revset.
+        self.git_call(["switch", "-c", mozphab_uplift_branch, self.revset[-1]])
+
+        try:
+            # Rebase from the other end of the revset onto our target, specifying
+            # our revset start rev as the base, since moz-phab on Git uses the base
+            # commit as the revset start, unlike Mercurial.
+            self.git_call(["rebase", "--onto", dest, f"{self.revset[0]}"])
+        except CommandError:
+            raise Error(
+                f"Rebasing your uplift commits {self.revset} onto {dest} failed.\n\n"
+                "This means your patch will fail to apply on landing due to conflicts "
+                "with your desired uplift train.\n\n"
+            )
+
     # ----
     # Methods private to this abstraction.
     # ----
@@ -547,3 +577,44 @@ class Jujutsu(Repository):
 
     def __check_output(self, *args, **kwargs) -> Union[List[str], str]:
         return check_output(*args, stderr=subprocess.PIPE, **kwargs)
+
+    def __get_base_remotes(self) -> List[str]:
+        """Return a list of remotes to use for selecting the first unpublished node."""
+        if self.args.upstream:
+            logger.debug(f"Using remote from `--upstream` arg: {self.args.upstream}.")
+            return self.args.upstream
+
+        if config.git_remote:
+            logger.debug(f"Using remote from `git.remote` config: {config.git_remote}.")
+            return config.git_remote
+
+        remote_output_lines = check_output(
+            [
+                "jj",
+                "git",
+                "remote",
+                "list",
+            ]
+        ).split("\n")
+        remotes: List[str] = [line.split(" ", 2)[0] for line in remote_output_lines]
+
+        # NOTE: `jj` doesn't permit spaces in names, so this _should_ be a safe parsing strategy.
+
+        if len(remotes) == 1:
+            logger.info(f"Using the only available remote: {remotes[0]}")
+            return remotes
+
+        if "origin" in remotes:
+            logger.warning(
+                "Multiple remotes found. Defaulting to 'origin'.\n"
+                "Set `git.remote` in your moz-phab config to specify another remote."
+            )
+            return ["origin"]
+
+        logger.warning(
+            "Multiple remotes found, and no `origin` present.\n"
+            "Attempting all remotes. This may produce incorrect results.\n"
+            "Set `git.remote` in your moz-phab config to specify the upstream remote."
+        )
+        logger.debug(f"Using all detected remotes: {remotes}.")
+        return remotes
