@@ -53,9 +53,7 @@ class Jujutsu(Repository):
 
         try:
             self.git_path = Path(
-                check_output(
-                    ["jj", "git", "root"], split=False, stderr=subprocess.STDOUT
-                )
+                self.__check_output(["jj", "git", "root"], split=False)
             )
         except Exception:
             raise ValueError(
@@ -83,7 +81,7 @@ class Jujutsu(Repository):
         self.revset = None
         self.branch = None
 
-        self.__email = check_output(
+        self.__email = self.__check_output(
             ["jj", "config", "get", "user.email"], split=False
         ).rstrip()
 
@@ -92,7 +90,7 @@ class Jujutsu(Repository):
 
         version_re = re.compile(r"jj (\d+\.\d+\.\d+)(?:-[a-fA-F0-9]{40})?")
         try:
-            jj_version_output = check_output(["jj", "version"], split=False)
+            jj_version_output = self.__check_output(["jj", "version"], split=False)
         except FileNotFoundError as exc:
             if exc.filename == "jj":
                 raise Error("`jj` executable was not found.")
@@ -135,9 +133,9 @@ class Jujutsu(Repository):
             start_rev = self.args.start_rev
         else:
             start_rev = (
-                self.__get_last_mutable_parent()
+                self.__get_last_stack_change()
                 if is_single
-                else self.__get_first_mutable_parent()
+                else self.__get_first_stack_change()
             )
         if not start_rev:
             return None
@@ -151,7 +149,7 @@ class Jujutsu(Repository):
         ):
             end_rev = self.args.end_rev
         else:
-            end_rev = self.__get_last_mutable_parent()
+            end_rev = self.__get_last_stack_change()
 
         self.revset = (start_rev, end_rev)
 
@@ -250,8 +248,20 @@ class Jujutsu(Repository):
         pass
 
     def untracked(self) -> List[str]:
-        # Jujutsu snapshots files automatically, so there's no risk of losing anything. Report
-        # nothing untracked.
+        is_working_copy_descriptionless_but_changed = self.__cli_log(
+            revset="@",
+            template="self.description().len() == 0 && !self.empty()",
+            split=False,
+        )
+        is_working_copy_descriptionless_but_changed = Jujutsu.__parse_log_bool(
+            "check for descriptionless-but-changed working copy",
+            is_working_copy_descriptionless_but_changed,
+        )
+        if is_working_copy_descriptionless_but_changed:
+            return self.__cli_log(
+                revset="@",
+                template='self.diff().files().map(|f| f.path()).join("\n")',
+            )
         return []
 
     def get_diff(self, commit: Commit) -> Diff:
@@ -363,7 +373,7 @@ class Jujutsu(Repository):
 
         if name and not self.args.no_branch and config.create_branch:
             branches = set(
-                check_output(
+                self.__check_output(
                     ["jj", "bookmark", "list", "--template", 'name ++ "\n"'],
                     strip=False,
                 )
@@ -421,7 +431,7 @@ class Jujutsu(Repository):
         options = []
         if use_reversed:
             options.append("--reversed")
-        return check_output(
+        return self.__check_output(
             [
                 "jj",
                 "log",
@@ -451,12 +461,12 @@ class Jujutsu(Repository):
                 # <https://github.com/martinvonz/jj/issues/4170>
             )
 
-    def __get_last_mutable_parent(self) -> str:
-        """Gets the last mutable parent of the working directory, but _only_ if there's one."""
+    def __get_last_stack_change(self) -> str:
+        """Gets the last of the current stack of mutable changes, but _only_ if there's one."""
         # TODO: Should we do something different when `config.git_remote` or `self.args.upstream`
         # are specified? Compare with `remotes` checks in Git impl.
 
-        revset = "heads(immutable()..@-)"
+        revset = 'heads(immutable()..@- | present(@ ~ description(exact:"")))'
         mutable_roots = self.__cli_log(template='change_id ++ "\\n"', revset=revset)
         if not mutable_roots:
             return None
@@ -466,12 +476,12 @@ class Jujutsu(Repository):
             )
         return mutable_roots[0]
 
-    def __get_first_mutable_parent(self) -> str:
-        """Gets the first mutable parent of the working-copy change, but _only_ if there's one."""
+    def __get_first_stack_change(self) -> str:
+        """Gets the first of the current stack of mutable changes, but _only_ if there's one."""
         # TODO: Should we do something different when `config.git_remote` or `self.args.upstream`
         # are specified? Compare with `remotes` checks in Git impl.
 
-        revset = "roots(immutable()..@-)"
+        revset = 'roots(immutable()..@- | present(@ ~ description(exact:"")))'
         mutable_roots = self.__cli_log(template='change_id ++ "\\n"', revset=revset)
         if not mutable_roots:
             return None
@@ -486,3 +496,6 @@ class Jujutsu(Repository):
         if s not in ["true", "false"]:
             raise Error(f"internal error: {name} was not `true` or `false`")
         return s == "true"
+
+    def __check_output(self, *args, **kwargs) -> Union[List[str], str]:
+        return check_output(*args, stderr=subprocess.PIPE, **kwargs)
