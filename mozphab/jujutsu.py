@@ -133,7 +133,11 @@ class Jujutsu(Repository):
         ):
             start_rev = self.args.start_rev
         else:
-            start_rev = "@-" if is_single else self.__get_first_mutable_parent()
+            start_rev = (
+                self.__get_last_mutable_parent()
+                if is_single
+                else self.__get_first_mutable_parent()
+            )
         if not start_rev:
             return None
 
@@ -146,7 +150,7 @@ class Jujutsu(Repository):
         ):
             end_rev = self.args.end_rev
         else:
-            end_rev = "@-"
+            end_rev = self.__get_last_mutable_parent()
 
         self.revset = (start_rev, end_rev)
 
@@ -439,6 +443,21 @@ class Jujutsu(Repository):
                 # the CLI. There is upstream work to track a better CLI for this:
                 # <https://github.com/martinvonz/jj/issues/4170>
             )
+
+    def __get_last_mutable_parent(self):
+        """Gets the last mutable parent of the working directory, but _only_ if there's one."""
+        # TODO: Should we do something different when `config.git_remote` or `self.args.upstream`
+        # are specified? Compare with `remotes` checks in Git impl.
+
+        revset = "heads(immutable()..@-)"
+        mutable_roots = self.__cli_log(template='change_id ++ "\\n"', revset=revset)
+        if not mutable_roots:
+            return None
+        elif len(mutable_roots) > 1:
+            raise Error(
+                f"Multiple mutable parents found (revset `{revset}`), unable to continue"
+            )
+        return mutable_roots[0]
 
     def __get_first_mutable_parent(self):
         """Gets the first mutable parent of the working-copy change, but _only_ if there's one."""
