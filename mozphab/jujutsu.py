@@ -325,13 +325,9 @@ class Jujutsu(Repository):
         """Check if local VCS is different than the remote one."""
         return self.__git_repo.is_cinnabar_required
 
-    def _hg_to_git(self, node: str) -> Optional[str]:
-        return self.__git_repo(node)
-
-    @lru_cache(maxsize=None)  # noqa: B019
-    def _git_to_hg(self, node: str) -> Optional[str]:
-        """Convert Git hashtag to Mercurial."""
-        return self.__git_repo._git_to_hg(node)
+    def get_public_node(self, node: str) -> str:
+        """Return a Mercurial node if Cinnabar is required."""
+        return self.__git_repo.get_public_node(node)
 
     # TODO: Functionality to make `local_uplift_if_possible` work?
 
