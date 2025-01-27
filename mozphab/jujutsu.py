@@ -14,7 +14,7 @@ from mozphab import environment
 from .commits import Commit
 from .config import config
 from .diff import Diff
-from .exceptions import Error
+from .exceptions import CommandError, Error
 from .git import Git
 from .helpers import (
     is_valid_email,
@@ -333,13 +333,27 @@ class Jujutsu(Repository):
     def check_node(self, node: str) -> str:
         """Check if the node exists.
 
-        Calls `hg2git` if node is not found and cinnabar extension is installed.
+        Consults `jj log --revisions $node` first, and:
 
-        Returns a node if found.
+        1. If multiple commits are found, return an error.
+        2. If a single commit is found, return it as a node.
+        3. If the CLI errors (which happens when there is no match,
+           among other things), then fall back to the Git backend's
+           behavior.
 
-        Raises NotFoundError if not found.
+        Raises NotFoundError if none of the above yield a single commit.
         """
-        return self.__git_repo.check_node(node)
+        try:
+            commits = self.__cli_log(template='commit_id ++ "\\n"', revset=node)
+            if len(commits) > 1:
+                raise Error(
+                    f"Multiple commits match revset `{node}`, unable to continue"
+                )
+            return commits[0]
+        except CommandError:
+            # Call the git backend as well, as it will try to resolve any
+            # cinnabar hashes.
+            return self.__git_repo.check_node(node)
 
     def before_patch(self, node: str, name: str):
         """Prepare repository to apply the patches.
