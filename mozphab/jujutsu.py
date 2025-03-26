@@ -368,7 +368,7 @@ class Jujutsu(Repository):
                 i += 1
                 branch_name = "%s_%s" % (name, i)
 
-            check_call(["jj", "bookmark", "create", branch_name])
+            check_call(["jj", "bookmark", "create", "--revision=@", branch_name])
             logger.info("Created bookmark %s", branch_name)
 
     def apply_patch(self, diff: str, body: str, author: str, author_date: str):
