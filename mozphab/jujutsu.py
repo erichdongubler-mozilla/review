@@ -85,10 +85,17 @@ class Jujutsu(Repository):
 
         self.vcs = "jj"
 
-        version_output = check_output(["jj", "--version"], split=False)
-        m = re.search(r"jj (\d+\.\d+\.\d+.*)", version_output)
+        version_re = re.compile(r"jj (\d+)\.(\d+)\.(\d+)(-[a-fA-F0-9]{40})?")
+        m = version_re.fullmatch(check_output(["jj", "version"], split=False))
         if not m:
             raise Error("Failed to determine Jujutsu version.")
+        version_number_strs = m.group(1, 2, 3)
+        version = list(map(int, version_number_strs))
+        min_version = [0, 28, 0]
+        if version < min_version:
+            raise Error(
+                f"`moz-phab` requires Jujutsu {'.'.join(map(str, min_version))} or higher."
+            )
         self.vcs_version = m.group(0)
 
         self.revset = None
