@@ -44,7 +44,7 @@ class Jujutsu(Repository):
         if not os.path.exists(dot_path):
             raise ValueError(f"{path}: not a Jujutsu repository")
 
-        logger.debug("found Jujutsu repo in %s", path)
+        logger.debug(f"found Jujutsu repo in {path}")
 
         version_str, version = self.__check_and_get_version()
         self.vcs_version = version_str
@@ -392,9 +392,9 @@ class Jujutsu(Repository):
         """
 
         if node:
-            with wait_message("Checking out %s.." % short_node(node)):
+            with wait_message(f"Checking out {short_node(node)}..."):
                 check_call(["jj", "new", "--quiet", node])
-            logger.info("Checked out %s", short_node(node))
+            logger.info(f"Checked out {short_node(node)}")
 
         if name and not self.args.no_branch and config.create_branch:
             branches = set(
@@ -408,7 +408,7 @@ class Jujutsu(Repository):
             i = 0
             while branch_name in branches:
                 i += 1
-                branch_name = "%s_%s" % (name, i)
+                branch_name = f"{name}_{i}"
 
             check_call(
                 ["jj", "bookmark", "create", "--quiet", "--revision=@", branch_name]
