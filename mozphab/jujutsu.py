@@ -53,7 +53,15 @@ class Jujutsu(Repository):
                 f"{path}: failed to run `jj git root`, likely not a Jujutsu repository"
             )
         logger.debug(f"git_path: {self.git_path}")
-        self.__git_repo = Git(self.git_path.parent)
+
+        try:
+            is_bare_git_repo = self.git_path.name != ".git"
+            bare_path = self.git_path if is_bare_git_repo else None
+            self.__git_repo = Git(path, bare_path=bare_path)
+        except Exception:
+            raise ValueError(
+                f"internal error: failed to initialize Git repo from {self.git_path}"
+            )
 
         # Populate common fields expected from a `Repository`
 
