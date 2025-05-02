@@ -26,7 +26,7 @@ from .helpers import (
 from .logger import logger
 from .repository import Repository
 from .spinner import wait_message
-from .subprocess_wrapper import check_call, check_output
+from .subprocess_wrapper import check_call, check_output, subprocess
 
 
 class Jujutsu(Repository):
@@ -42,7 +42,16 @@ class Jujutsu(Repository):
     def __init__(self, path: str):
         self.vcs_version = Jujutsu.__check_and_get_version()
 
-        self.git_path = Path(check_output(["jj", "git", "root"], split=False))
+        try:
+            self.git_path = Path(
+                check_output(
+                    ["jj", "git", "root"], split=False, stderr=subprocess.STDOUT
+                )
+            )
+        except:
+            raise ValueError(
+                f"{path}: failed to run `jj git root`, likely not a Jujutsu repository"
+            )
         logger.debug(f"git_path: {self.git_path}")
         self.__git_repo = Git(self.git_path.parent)
 
