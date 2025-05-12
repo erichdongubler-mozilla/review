@@ -54,20 +54,14 @@ class Jujutsu(Repository):
             )
         logger.debug(f"git_path: {self.git_path}")
 
-        is_bare_git_repo = self.git_path.name != ".git"
-        if is_bare_git_repo:
-            msg = " ".join(
-                [
-                    f"`jj git root` points to `{self.git_path}`, which is a bare repo by",
-                    "convention. We're assuming that you're using a non-co-located",
-                    "Jujutsu repository; these will be supported with",
-                    "<https://bugzilla.mozilla.org/show_bug.cgi?id=1964150>.",
-                ]
+        try:
+            is_bare_git_repo = self.git_path.name != ".git"
+            bare_path = self.git_path if is_bare_git_repo else None
+            self.__git_repo = Git(path, bare_path=bare_path)
+        except Exception:
+            raise ValueError(
+                f"internal error: failed to initialize Git repo from {self.git_path}"
             )
-            logger.warn(msg)
-            raise ValueError(msg)
-
-        self.__git_repo = Git(self.git_path.parent)
 
         # Populate common fields expected from a `Repository`
 
