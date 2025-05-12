@@ -102,7 +102,7 @@ class Helpers(unittest.TestCase):
         # TODO test walking the path
         repo = None
 
-        def probe_repo(_):
+        def probe_repo(*_args, **_kwargs):
             return repo
 
         m_probe.side_effect = probe_repo
@@ -366,6 +366,27 @@ def test_hg_find_repo(hg_repo_path):
     assert path == detect_repository.find_repo_root(path)
 
 
+def test_jj_find_colocated_repo_at_root(jj_colocated_repo_path):
+    path = str(jj_colocated_repo_path)
+    assert path == detect_repository.find_repo_root(path)
+
+
+def test_jj_find_colocated_repo_in_subdir(jj_colocated_repo_path):
+    path = str(jj_colocated_repo_path)
+    assert path == detect_repository.find_repo_root(path)
+    subdir = jj_colocated_repo_path / "test_dir"
+    subdir.mkdir()
+    assert path == detect_repository.find_repo_root(str(subdir))
+
+
+def test_avoid_jj_find_colocated_git_repo(jj_colocated_repo_path):
+    path = str(jj_colocated_repo_path)
+    assert path == detect_repository.find_repo_root(path, avoid_jj=True)
+    subdir = jj_colocated_repo_path / "test_dir"
+    subdir.mkdir()
+    assert path == detect_repository.find_repo_root(str(subdir))
+
+
 def test_fail_find_repo():
     path = "/non/existing/path"
     assert detect_repository.find_repo_root(path) is None
@@ -373,13 +394,21 @@ def test_fail_find_repo():
 
 @mock.patch("mozphab.detect_repository.Mercurial")
 @mock.patch("mozphab.detect_repository.Git")
-def test_probe_repo(m_git, m_hg):
+@mock.patch("mozphab.detect_repository.Jujutsu")
+def test_probe_repo(m_jj, m_git, m_hg):
     m_hg.return_value = "HG"
 
     assert "HG" == detect_repository.probe_repo("path")
 
     m_hg.side_effect = ValueError
+
+    m_jj.return_value = "JJ"
+    assert "JJ" == detect_repository.probe_repo("path")
+
     m_git.return_value = "GIT"
+    assert "GIT" == detect_repository.probe_repo("path", avoid_jj=True)
+
+    m_jj.side_effect = ValueError
     assert "GIT" == detect_repository.probe_repo("path")
 
     m_git.side_effect = ValueError
@@ -391,7 +420,7 @@ def test_repo_from_args(m_probe):
     # TODO test walking the path
     repo = None
 
-    def probe_repo(path):
+    def probe_repo(*_args, **_kwargs):
         return repo
 
     m_probe.side_effect = probe_repo
@@ -774,17 +803,15 @@ def test_move_drev_to_original():
 
     # Ensure `Differential Revision` is moved to `Original` and `rev_id` is wiped.
     commit_message = (
-        "bug 1: title r?reviewer\n"
-        "\n"
-        "Differential Revision: http://phabricator.test/D1"
+        "bug 1: title r?reviewer\n\nDifferential Revision: http://phabricator.test/D1"
     )
     expected = (
-        "bug 1: title r?reviewer\n" "\n" "Original Revision: http://phabricator.test/D1"
+        "bug 1: title r?reviewer\n\nOriginal Revision: http://phabricator.test/D1"
     )
     message, rev_id = helpers.move_drev_to_original(commit_message, 1)
-    assert (
-        message == expected
-    ), "`Differential Revision` not re-written to `Original Revision` on uplift."
+    assert message == expected, (
+        "`Differential Revision` not re-written to `Original Revision` on uplift."
+    )
     assert rev_id is None, "`rev_id` not returned as `None` for new uplift."
 
     # If `Original` and `Differential` are in the commit message, then a previously
@@ -798,9 +825,9 @@ def test_move_drev_to_original():
         "Differential Revision: http://phabricator.test/D2"
     )
     message, rev_id = helpers.move_drev_to_original(commit_message, 2)
-    assert (
-        message == expected
-    ), "`Original Revision` should be kept and `Differential Revision` cleared."
+    assert message == expected, (
+        "`Original Revision` should be kept and `Differential Revision` cleared."
+    )
     assert rev_id is None, "`rev_id` should be `None` for new uplift."
 
 
