@@ -42,6 +42,9 @@ class Jujutsu(Repository):
     def __init__(self, path: str):
         self.vcs_version = Jujutsu.__check_and_get_version()
 
+        resolved_path = Path(path).resolve(strict=True)
+        logger.debug(f"resolved_path: {resolved_path}")
+
         try:
             self.git_path = Path(
                 check_output(
@@ -55,8 +58,11 @@ class Jujutsu(Repository):
         logger.debug(f"git_path: {self.git_path}")
 
         try:
-            is_bare_git_repo = self.git_path.name != ".git"
-            bare_path = self.git_path if is_bare_git_repo else None
+            is_colocated = (
+                resolved_path == self.git_path.parent and self.git_path.name == ".git"
+            )
+            logger.debug(f"is_colocated: {is_colocated}")
+            bare_path = None if is_colocated else self.git_path
             self.__git_repo = Git(path, bare_path=bare_path)
         except Exception:
             raise ValueError(
